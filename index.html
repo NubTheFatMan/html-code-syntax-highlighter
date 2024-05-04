@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Syntax Highlighter</title>
+        <script src="highlighter.js"></script>
+
+        <style>
+            html, body {
+                background-color: rgb(31, 31, 62);
+                color: white;
+                font-family: monospace;
+                font-size: 16px;
+            }
+            .codeblock {
+                position: fixed;
+                width: 50%;
+                height: 66%;
+                min-height: 768px;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background-color: rgb(21, 21, 52);
+                border: 4px solid rgb(41, 41, 72);
+                display: flex;
+                overflow: scroll;
+            }
+            .codeblock p {
+                padding: 0;
+                padding-bottom: 8px;
+                margin: 0;
+                white-space: break-spaces;
+                text-wrap: nowrap;
+            }
+            .codeblock .lines, .codeblock .code {
+                padding: 8px;
+                padding-top: 0;
+            }
+            .codeblock .code {
+                padding-left: 0;
+                padding-top: 8px;
+            }
+            .codeblock .lines p {
+                padding-right: 8px;
+                padding-top: 8px;
+                border-right: 2px solid rgb(41, 41, 72);
+                text-align: right;
+            }
+
+            .code .basefunction {
+                color: rgb(62, 216, 216);
+            }
+            .code .function {
+                color: rgb(31, 150, 255);
+            }
+            .code .keyword {
+                color: rgb(216, 62, 216);
+            }
+            .code .comment {
+                color: rgb(82, 82, 144);
+            }
+            .code .number {
+                color: rgb(255, 168, 62);
+            }
+            .code .string {
+                color: rgb(62, 216, 124);
+            }
+            .code .operator {
+                color: rgb(176, 176, 176);
+            }
+        </style>
+    </head>
+    <body>
+        <span class="codeblock">
+            <span class="lines"><p id="lua-lines">1<br>2</p></span>
+            <!-- Hardcoded this file because I made it without an HTTP server and kept getting a "CORS request not HTTP error" -->
+            <!-- This is from my gmod administration mod, Nadmin. File https://github.com/NubTheFatMan/nadmin/blob/master/lua/nadmin/plugins/votemode.lua -->
+            <span class="code"><p id="lua-code">local COMMAND = {}<br>COMMAND.title = "Votemode"<br>COMMAND.description = "Initializes a votemode to switch the server from build to war or vice versa."<br>COMMAND.author = "Nub"<br>COMMAND.timeCreated = "Saturday, March 22, 2020 @ 2:08 AM"<br>COMMAND.category = "Voting"<br>COMMAND.call = "votemode"<br><br>nadmin:RegisterPerm({<br>    title = "Bypass Votemode Cooldown",<br>    id = "bypass_vm_cooldown"<br>})<br><br>local lastVote = 0<br>COMMAND.server = function(caller, args)<br>    if os.time() - lastVote &gt;= 600 or caller:HasPerm("bypass_vm_cooldown") then<br>        if not istable(nadmin.vote) or not nadmin.vote.active then<br>            lastVote = os.time()<br>            nadmin:CreateVote({<br>                title = "Votemode",<br>                description = "Vote to change the gamemode (build/war)",<br>                choices = {"Build", "War"},<br>                showResponses = false,<br>                showResults = false,<br>                forcedResponse = true,<br>                onComplete = function(responses, responded)<br>                     -- We don't want to do anything in a 50/50<br>                    if #responses["Build"] == #responses["War"] then<br>                        nadmin:Notify(nadmin.colors.blue, "Tie", nadmin.colors.white, "! Gamemode will ", nadmin.colors.red, "not", nadmin.colors.white, " change.")<br>                        return<br>                    end<br><br>                    if #responses["Build"] &gt; #responses["War"] then<br>                        local wanted = math.Round((#responses["Build"]/#responded) * 100)<br>                        nadmin:Notify(nadmin.colors.blue, "Build", nadmin.colors.white, " won (", nadmin.colors.blue, tostring(wanted) .. "%", nadmin.colors.white, ")! Gamemode will change.")<br><br>                        RunConsoleCommand("sbox_godmode", "1")<br>                        RunConsoleCommand("sbox_noclip", "1")<br>                    else<br>                        local wanted = math.Round((#responses["War"]/#responded) * 100)<br>                        nadmin:Notify(nadmin.colors.blue, "War", nadmin.colors.white, " won (", nadmin.colors.blue, tostring(wanted) .. "%", nadmin.colors.white, ")! Gamemode will change.")<br><br>                        RunConsoleCommand("sbox_godmode", "0")<br>                        RunConsoleCommand("sbox_noclip", "0")<br><br>                        for i, ply in ipairs(player.GetAll()) do --Take everyone out of noclip<br>                            if ply:GetMoveType() == MOVETYPE_NOCLIP and not ply:HasPerm("always_allow_noclip") then<br>                                ply:SetMoveType(MOVETYPE_WALK)<br>                            end<br>                        end<br>                    end<br>                end<br>            })<br><br>            nadmin:Notify(nadmin:GetNameColor(caller) or nadmin.colors.blue, caller:Nick(), nadmin.colors.white, " has started a ", nadmin.colors.red, "votemode", nadmin.colors.white, ".")<br>        else<br>            nadmin:Notify(caller, nadmin.colors.red, "There is already a vote active!")<br>        end<br>    else<br>        nadmin:Notify(caller, nadmin.colors.red, "You must wait ", nadmin.colors.white, nadmin:TimeToString(lastVote + 600 - os.time(), true), nadmin.colors.red, " before another votemode!")<br>    end<br>end<br><br>nadmin:RegisterCommand(COMMAND)</p></span>
+        </span>
+    </body>
+</html>
