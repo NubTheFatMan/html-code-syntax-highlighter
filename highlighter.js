@@ -2,18 +2,20 @@ document.addEventListener("DOMContentLoaded", event => {
     let lines = document.getElementById("lua-lines");
     let code = document.getElementById("lua-code");
 
-    let numberOfLines = code.innerText.split(/\n/g).length;
-    let lineCounterText = '1';
-    for (let i = 1; i < numberOfLines; i++) {
-        lineCounterText += "\n" + (i + 1);
-    }
-    lines.innerText = lineCounterText;
+    // let numberOfLines = code.innerText.split(/\n/g).length;
+    // let lineCounterText = '1';
+    // for (let i = 1; i < numberOfLines; i++) {
+    //     lineCounterText += "\n" + (i + 1);
+    // }
+    // lines.innerText = lineCounterText;
 
     let startedTokenize = performance.now();
-    let luaTokens = luaTokenize(code.innerText);
+    let [luaTokens, lineCounter] = luaTokenize(code.innerText);
     let tokenLines = luaParseTokens(luaTokens);
     let tokenizeTime = performance.now() - startedTokenize;
     console.log(tokenLines);
+
+    lines.innerHTML = lineCounter.join('<br>');
     
     let sumRawTokens = 0;
     for (let x = 0; x < luaTokens.length; x++) {
@@ -50,45 +52,63 @@ document.addEventListener("DOMContentLoaded", event => {
         }
     }
     let generatedTime = performance.now() - startedGenerator;
-    console.log(`Raw tokens: ${sumRawTokens}\nParsed tokens: ${sumGeneratedTokens} (${((1 - (sumGeneratedTokens / sumRawTokens)) * 100).toFixed(2)}% reduction)\nTokenized in ${tokenizeTime} ms\nGenerated HTML in ${generatedTime} ms`);
+    console.log(`Raw tokens: ${sumRawTokens}\nParsed tokens: ${sumGeneratedTokens} (${((1 - (sumGeneratedTokens / sumRawTokens)) * 100).toFixed(2)}% reduction)\nTokenized in ${tokenizeTime} ms\nGenerated HTML in ${generatedTime} ms (${generatedHTML.length} characters)`);
 
     code.innerHTML = generatedHTML;
 });
 
-// Takes raw lua input and splits it into raw tokens
-function luaTokenize(input) {
-    /* Regex breakdown:
-        Capture group 1: (\s+)
-            - Captures spaces
-        Capture groups 2: (\/\/.*|--.*)
-            - Captures single line comments. Does not support multiline comments at the moment.
-        Capture group 3: ([a-zA-Z_][a-zA-Z_0-9]*)
-            - Captures names, keywords, etc. For example, "local", "_variableName", "vector12" would all be captured by this
-        Capture group 4: (\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)
-            - Captures numbers
-        Capture group 5: ("(?:[^"\\]|\\(?:[nr"\\]|u[0-9a-fA-F]{4}))*")
-            - Captures strings
-        Capture group 6: ([(){}\[\]?.,%:#;*\/]|[+\-<>^]=?|[!~=](?:=)?)
-            - Captures operators
-    */
-    let regex = /(\s+)|(\/\/.*|--.*)|([a-zA-Z_][a-zA-Z_0-9]*)|(\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)|("(?:[^"\\]|\\(?:[nr"\\]|u[0-9a-fA-F]{4}))*")|([(){}\[\]?.,%:#;*\/]|[+\-<>^]=?|[!~=](?:=)?)/y;
+/* Regex breakdown:
+    Capture group 1: (\s+)
+        - Captures spaces
+    Capture group 2: (--\[\[.*\]\]|\/\/.*|--.*)
+        - Captures single line comments
+    Capture group 3: ([a-zA-Z_][a-zA-Z_0-9]*)
+        - Captures names, keywords, etc. For example, "local", "_variableName", "vector12" would all be captured by this
+    Capture group 4: (\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)
+        - Captures numbers
+    Capture group 5: (\[\[.*\]\]|"(?:[^"\\]|\\(?:[nr"\\]|u[0-9a-fA-F]{4}))*"|'(?:[^'\\]|\\(?:[nr'\\]|u[0-9a-fA-F]{4}))*')
+        - Captures strings
+    Capture group 6: ([(){}\[\]"'?.,%:#;*\/]|[+\-<>^]=?|[!~=](?:=)?)
+        - Captures operators
+*/
+let luaRegex = /(\s+)|(--\[\[.*\]\]|\/\/.*|--.*)|([a-zA-Z_][a-zA-Z_0-9]*)|(\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)|(\[\[.*\]\]|"(?:[^"\\]|\\(?:[nr"\\]|u[0-9a-fA-F]{4}))*"|'(?:[^'\\]|\\(?:[nr'\\]|u[0-9a-fA-F]{4}))*')|([(){}\[\]"'?.,%:#;*\/]|[+\-<>^]=?|[!~=](?:=)?)/y;
+
+function luaTokenize(input) { 
     let lines = input.split(/\n|\r\n?/);
     
     let tokens = [];
     let timeout = 1000;
     let started = performance.now();
+    let lineCounter = [];
 
+    let inLongString = false;
+    let inComment = false;
     for (let i = 0; i < lines.length; i++) {
         if (performance.now() - started >= timeout) break;
         let line = lines[i];
-        regex.lastIndex = 0;
+        luaRegex.lastIndex = 0;
+        lineCounter.push((i + 1).toString());
 
         let index = 0;
         let tokensThisLine = [];
+        let errored = false;
         while (index < line.length && performance.now() - started < timeout) {
-            let captives = regex.exec(line);
+            let captives = luaRegex.exec(line);
             
-            if (!captives) console.log(`No match: Line ${i + 1}, Column ${index + 1}\n${lines[i]}\n"${lines[i][index]}"`);
+            if (!captives) {
+                console.log(`Parse error: Unknown token on line ${i + 1}, column ${index + 1}\n${line}\n${" ".repeat(index)}^`);
+                tokensThisLine.push({content: line[index], class: "error"});
+                tokensThisLine.push({content: line.substring(index + 1), class: "noparse operator"});
+                tokens.push(tokensThisLine);
+
+                tokens.push([{content: " ".repeat(index) + "^", class: "error"}]);
+                tokens.push([{content: `Parse error: Unknown token on line ${i + 1}, column ${index + 1}`, class: "error"}]);
+
+                lineCounter.push('');
+                lineCounter.push('');
+                errored = true;
+                break;
+            }
             else if (captives[1]) tokensThisLine.push({content: captives[1]});
             else if (captives[2]) tokensThisLine.push({content: captives[2], class: "comment"});
             else if (captives[3]) tokensThisLine.push({content: captives[3], class: "name"});
@@ -96,12 +116,12 @@ function luaTokenize(input) {
             else if (captives[5]) tokensThisLine.push({content: captives[5], class: "string"});
             else if (captives[6]) tokensThisLine.push({content: captives[6], class: "operator"});
             
-            index = regex.lastIndex;
+            index = luaRegex.lastIndex;
         }
-        tokens.push(tokensThisLine);
+        if (!errored) tokens.push(tokensThisLine);
     }
 
-    return tokens;
+    return [tokens, lineCounter];
 }
 
 // Takes raw tokens from luaTokenize and parses them. This determines if names should actually be a keyword, things like that. 
@@ -196,29 +216,81 @@ function luaParseTokens(tokenLines) {
         secondPass.push(thisTokenLine);
     }
 
-    return secondPass;
+    // Third pass scans through the second pass and determines multiline strings and comments
+    let thirdPass = [];
+    let isComment = false;
+    let inString = false;
+    for (let lineIndex = 0; lineIndex < secondPass.length; lineIndex++) {
+        if (performance.now() - started >= timeout) break;
+        
+        let line = secondPass[lineIndex];
+        let lineTokens = [];
+        let runningContent = '';
+        for (let tokenIndex = 0; tokenIndex < line.length; tokenIndex++) {
+            if (performance.now() - started >= timeout) break;
+
+            let token = line[tokenIndex];
+
+            if (token.class === "string" && !inString) {
+                lineTokens.push(token);
+                continue;
+            }
+
+            let content = token.content;
+            let contentTrimmed = token.content.trim();
+            let [startIndex, endIndex] = [content.indexOf("[["), content.indexOf("]]")];
+            let shouldStart = (!inString && startIndex !== -1);
+            let shouldEnd = (inString && endIndex !== -1);
+
+            if (shouldStart) {
+                inString = true;
+                runningContent = "";
+                if (token.class === "comment" && contentTrimmed.startsWith("--[[")) {
+                    isComment = true;
+                    runningContent += content;
+                    if (contentTrimmed.endsWith("]]")) {
+                        lineTokens.push({content: runningContent, class: isComment ? "comment" : "string"});
+                        runningContent = "";
+                        inString = false;
+                    }
+                } else {
+                    isComment = false;
+
+                    let leftTokenContent = content.substring(0, startIndex);
+                    if (leftTokenContent.trim().length > 0) {
+                        content = content.substring(startIndex);
+                        runningContent += content;
+                        lineTokens.push({content: leftTokenContent, class: token.class});
+                    }
+                }
+                
+            }
+
+            if (shouldEnd) {
+                inString = false;
+                let rightSideContent = content.substring(endIndex + 2);
+                if (rightSideContent.trim().length > 0) {
+                    lineTokens.push({content: content.substring(0, endIndex), class: isComment ? "comment" : "string"});
+                    lineTokens.push({content: rightSideContent, class: token.class});
+                } else {
+                    lineTokens.push({content: content, class: isComment ? "comment" : "string"});
+                }
+            }
+
+            if (inString && !shouldStart && !shouldEnd) {
+                runningContent += token.content;
+            } else if (!inString && !shouldStart && !shouldEnd) {
+                lineTokens.push(token);
+            }
+        }
+        if (runningContent.length > 0) lineTokens.push({content: runningContent, class: isComment ? "comment" : "string"});
+        
+        thirdPass.push(lineTokens);
+    }
+
+    return thirdPass;
 }
 
-/* Cheated base functions by loading the gmod wiki (https://wiki.facepunch.com/gmod/) and running this bad code :trollface:
-    let obj = [];
-    let buttons = document.getElementsByClassName("meth");
-
-    for (let i = 0; i < buttons.length; i++) {
-        let button = buttons[i];
-        let hrefSplit = button.href.split('/');
-        let name = hrefSplit[hrefSplit.length - 1];
-        if (name.startsWith('Global.')) name = name.substring(7);
-        if (!name.includes(":")) obj.push(`"${name.trim()}": {class: "basefunction", href: "${button.href}"}`);
-    }
-
-    let str = '';
-
-    for (let i = 0; i < obj.length; i++) {
-        if (i !== 0) str += "\n";
-        str += obj[i] + ','; 
-    }
-    console.log(str) 
-*/
 let keywords = {
     // Keywords
     "function": {class: "keyword"},
@@ -236,6 +308,7 @@ let keywords = {
     "return": {class: "keyword"},
     "not": {class: "keyword"},
     "in": {class: "keyword"},
+    "continue": {class: "keyword"},
 
     // Numbers
     "true": {class: "number"},
@@ -245,6 +318,26 @@ let keywords = {
     "NULL": {class: "number"},
 
     // Base functions (gmod lua documentation linking)
+    /* Cheated base functions by loading the gmod wiki (https://wiki.facepunch.com/gmod/) and running this bad code :trollface:
+        let obj = [];
+        let buttons = document.getElementsByClassName("meth");
+
+        for (let i = 0; i < buttons.length; i++) {
+            let button = buttons[i];
+            let hrefSplit = button.href.split('/');
+            let name = hrefSplit[hrefSplit.length - 1];
+            if (name.startsWith('Global.')) name = name.substring(7);
+            if (!name.includes(":")) obj.push(`"${name.trim()}": {class: "basefunction", href: "${button.href}"}`);
+        }
+
+        let str = '';
+
+        for (let i = 0; i < obj.length; i++) {
+            if (i !== 0) str += "\n";
+            str += obj[i] + ','; 
+        }
+        console.log(str) 
+    */
     "AccessorFunc": {class: "basefunction", href: "https://wiki.facepunch.com/gmod/Global.AccessorFunc"},
     "Add_NPC_Class": {class: "basefunction", href: "https://wiki.facepunch.com/gmod/Global.Add_NPC_Class"},
     "AddBackgroundImage": {class: "basefunction", href: "https://wiki.facepunch.com/gmod/Global.AddBackgroundImage"},
